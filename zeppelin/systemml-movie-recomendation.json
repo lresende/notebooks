@@ -1,0 +1,420 @@
+{
+  "paragraphs": [
+    {
+      "title": "Read Ratings Information",
+      "text": "val ratingsText \u003d sc.textFile(\"/data/netflix/training_set_normalized/mv_000*.txt\")\nval data \u003d ratingsText.map(s \u003d\u003e s.split(\",\")).map(arr \u003d\u003e arr(0) + \" \" + arr(1) + \" \" + arr(2)).cache\n\ndata.take(5).foreach(println)\n\n// get size of user-item matrix\nval rows \u003d data.map(s \u003d\u003e s.split(\" \")(0).toInt).max()  // number of rows for user-item matrix\nval cols \u003d data.map(s \u003d\u003e s.split(\" \")(1).toInt).max()  // number of cols for user-item matrix",
+      "user": "admin",
+      "dateUpdated": "Nov 14, 2016 10:00:28 AM",
+      "config": {
+        "lineNumbers": false,
+        "colWidth": 12.0,
+        "editorMode": "ace/mode/scala",
+        "editorHide": false,
+        "title": true,
+        "graph": {
+          "mode": "table",
+          "height": 300.0,
+          "optionOpen": false,
+          "keys": [],
+          "values": [],
+          "groups": [],
+          "scatter": {}
+        },
+        "enabled": true
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "jobName": "paragraph_1478544847405_289461597",
+      "id": "20150210-015259_1403135953",
+      "result": {
+        "code": "SUCCESS",
+        "type": "TEXT",
+        "msg": "\nratingsText: org.apache.spark.rdd.RDD[String] \u003d /data/netflix/training_set_normalized/mv_000*.txt MapPartitionsRDD[38] at textFile at \u003cconsole\u003e:35\n\ndata: org.apache.spark.rdd.RDD[String] \u003d MapPartitionsRDD[40] at map at \u003cconsole\u003e:37\n1 30878 4\n1 2442 3\n1 4326 4\n1 38052 3\n1 59052 2\n\nrows: Int \u003d 9999\n\ncols: Int \u003d 59999\n"
+      },
+      "dateCreated": "Nov 7, 2016 12:54:07 PM",
+      "dateStarted": "Nov 14, 2016 10:00:28 AM",
+      "dateFinished": "Nov 14, 2016 10:00:36 AM",
+      "status": "FINISHED",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "title": "train/test split",
+      "text": "// get train test split for cross-validation\n// for simplicity, we\u0027ll just do random sampling\nval Array(train, test) \u003d data.randomSplit(Array(0.7, 0.3), 98765)",
+      "user": "admin",
+      "dateUpdated": "Nov 14, 2016 10:00:28 AM",
+      "config": {
+        "colWidth": 12.0,
+        "graph": {
+          "mode": "table",
+          "height": 300.0,
+          "optionOpen": false,
+          "keys": [],
+          "values": [],
+          "groups": [],
+          "scatter": {}
+        },
+        "enabled": true,
+        "editorMode": "ace/mode/scala",
+        "title": true
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "jobName": "paragraph_1478913256910_-1987903420",
+      "id": "20161111-191416_801326484",
+      "result": {
+        "code": "SUCCESS",
+        "type": "TEXT",
+        "msg": "\n\ntrain: org.apache.spark.rdd.RDD[String] \u003d MapPartitionsRDD[43] at randomSplit at \u003cconsole\u003e:45\ntest: org.apache.spark.rdd.RDD[String] \u003d MapPartitionsRDD[44] at randomSplit at \u003cconsole\u003e:45\n"
+      },
+      "dateCreated": "Nov 11, 2016 7:14:16 AM",
+      "dateStarted": "Nov 14, 2016 10:00:28 AM",
+      "dateFinished": "Nov 14, 2016 10:00:36 AM",
+      "status": "FINISHED",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "title": "ALS Algorithm in DML",
+      "text": "//-----------------------------------------------------------------\n// Create kernel in SystemML\u0027s DSL using the R-like syntax for ALS\n// Algorithms available at : https://systemml.apache.org/algorithms\n// Below algorithm based on ALS-CG.dml\n//-----------------------------------------------------------------\nval script1 \u003d\n\"\"\"\n# Default values of some parameters\nr          \u003d ifdef ($rank, 3);         # $rank\u003d10;\nreg\t       \u003d ifdef ($reg, \"L2\")         # $reg\u003d\"L2\";\nlambda\t   \u003d ifdef ($lambda, 0.000001); # $lambda\u003d0.000001;\nmax_iter   \u003d ifdef ($maxi, 10);         # $maxi\u003d50;\ncheck      \u003d ifdef ($check, TRUE);\t    # $check\u003dFALSE;\nthr        \u003d ifdef ($thr, 0.0001);      # $thr\u003d0.0001;\nfmtO       \u003d ifdef ($fmt, \"text\");      # $fmt\u003d\"text\";\n\n###### MAIN PART ######\nm \u003d nrow (X);\nn \u003d ncol (X);\n\n# initializing factor matrices\nU \u003d rand (rows \u003d m, cols \u003d r, min \u003d -0.5, max \u003d 0.5); # mxr\nV \u003d rand (rows \u003d n, cols \u003d r, min \u003d -0.5, max \u003d 0.5); # nxr\n\nW \u003d ppred (X, 0, \"!\u003d\");\n\n# Prepare to compute losses (lresende)\nlosses \u003d matrix(0, rows\u003dmax_iter*2, cols\u003d1)\n\n# check for regularization\nif( reg \u003d\u003d \"L2\" ) {\n  print (\"BEGIN ALS-CG SCRIPT WITH NONZERO SQUARED LOSS + L2 WITH LAMBDA - \" + lambda);\n  row_nonzeros \u003d matrix(1, nrow(W), 1);\n  col_nonzeros \u003d matrix(1, ncol(W), 1);\n} \nelse if( reg \u003d\u003d \"wL2\" ) {\n  print (\"BEGIN ALS-CG SCRIPT WITH NONZERO SQUARED LOSS + WEIGHTED L2 WITH LAMBDA - \" + lambda);\n  row_nonzeros \u003d rowSums(W);\n  col_nonzeros \u003d t(colSums(W));\n} \nelse {\n  stop (\"wrong regularization! \" + reg);\n}\n\n# Loss Function with L2:\n# f (U, V) \u003d 0.5 * sum (W * (U %*% V - X) ^ 2)\n#          + 0.5 * lambda * (sum (U ^ 2) + sum (V ^ 2))\n# Loss Function with weighted L2:\n# f (U, V) \u003d 0.5 * sum (W * (U %*% V - X) ^ 2)\n#          + 0.5 * lambda * (sum (U ^ 2 * row_nonzeros) + sum (V ^ 2 * col_nonzeros))\n\nis_U \u003d TRUE;  # TRUE \u003d Optimize U, FALSE \u003d Optimize V\nmaxinneriter \u003d r ; # min (ncol (U), 15);\n\nif( check ) {\n  loss_init \u003d 0.5 * sum (ppred(X,0, \"!\u003d\") * (U %*% t(V) - X) ^ 2);\n  loss_init \u003d loss_init + 0.5 * lambda * (sum (U ^ 2 * row_nonzeros) + sum (V ^ 2 * col_nonzeros));\n  print (\"-----   Initial train loss: \" + loss_init + \" -----\");\n}\n\nit \u003d 0;\nconverged \u003d FALSE;\nwhile( as.integer(it/2) \u003c max_iter \u0026 ! converged ) \n{\n  it \u003d it + 1;\n  if( is_U ) {\n    G \u003d (ppred(X,0,\"!\u003d\") * (U %*% t(V) - X)) %*% V + lambda * U * row_nonzeros;\n  } \n  else {\n    G \u003d t(t(U) %*% (ppred(X,0,\"!\u003d\") * (U %*% t(V) - X))) + lambda * V * col_nonzeros;\n  }\n\n  R \u003d -G;\n  S \u003d R;\n  norm_G2 \u003d sum (G ^ 2);\n  norm_R2 \u003d norm_G2;\n  \n  inneriter \u003d 1;\n  tt \u003d 0.000000001;\n  while( norm_R2 \u003e tt * norm_G2 \u0026 inneriter \u003c\u003d maxinneriter )\n  {\n    if( is_U ) {\n      HS \u003d (W * (S %*% t(V))) %*% V + lambda * S * row_nonzeros;\n      alpha \u003d norm_R2 / sum (S * HS);\n      U \u003d U + alpha * S;  # OK since U is not used in HS\n    } \n    else {\n      HS \u003d t(t(U) %*% (W * (U %*% t(S)))) + lambda * S * col_nonzeros;\n      alpha \u003d norm_R2 / sum (S * HS);\n      V \u003d V + alpha * S;  # OK since V is not used in HS\n    }\n\n    R \u003d R - alpha * HS;\n    old_norm_R2 \u003d norm_R2;\n    norm_R2 \u003d sum (R ^ 2);\n    S \u003d R + (norm_R2 / old_norm_R2) * S;\n    inneriter \u003d inneriter + 1;\n  }  \n\n  is_U \u003d ! is_U;\n\t\n  # check for convergence\n  # if( check \u0026 (it%%2 \u003d\u003d 0) ) { #lresende\n    loss_cur \u003d 0.5 * sum (ppred(X,0, \"!\u003d\") * (U %*% t(V) - X) ^ 2);\n    loss_cur \u003d loss_cur + 0.5 * lambda * (sum (U ^ 2 * row_nonzeros) + sum (V ^ 2 * col_nonzeros));\n    losses[it,1] \u003d loss_cur # lresende\n\t\n    loss_dec \u003d (loss_init - loss_cur) / loss_init;\n    print (\"Train loss at iteration (\" + as.integer(it/2) + \"): \" + loss_cur + \" loss-dec \" + loss_dec);\n    if( loss_dec \u003e\u003d 0 \u0026 loss_dec \u003c thr | loss_init \u003d\u003d 0 ) {\n      print (\"----- ALS-CG converged after \" + as.integer(it/2) + \" iterations!\");\n      converged \u003d TRUE;\n    }\n    loss_init \u003d loss_cur;\n  # } #lresende\n}\n\nif( check ) {\n  print (\"----- Final train loss: \" + loss_init + \" -----\");\n}\n\nif( !converged ) {\n  print (\"Max iteration achieved but not converged!\");\n}\n\nV \u003d t(V);\n\"\"\"",
+      "user": "admin",
+      "dateUpdated": "Nov 14, 2016 10:00:28 AM",
+      "config": {
+        "lineNumbers": false,
+        "colWidth": 12.0,
+        "editorMode": "ace/mode/scala",
+        "title": true,
+        "graph": {
+          "mode": "table",
+          "height": 537.6000366210938,
+          "optionOpen": false,
+          "keys": [],
+          "values": [],
+          "groups": [],
+          "scatter": {}
+        },
+        "enabled": true
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "jobName": "paragraph_1478544847405_289461597",
+      "id": "20160505-123649_385605770",
+      "result": {
+        "code": "SUCCESS",
+        "type": "TEXT",
+        "msg": "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nscript1: String \u003d \n\"\n# Default values of some parameters\nr          \u003d ifdef ($rank, 3);         # $rank\u003d10;\nreg\t       \u003d ifdef ($reg, \"L2\")         # $reg\u003d\"L2\";\nlambda\t   \u003d ifdef ($lambda, 0.000001); # $lambda\u003d0.000001;\nmax_iter   \u003d ifdef ($maxi, 10);         # $maxi\u003d50;\ncheck      \u003d ifdef ($check, TRUE);\t    # $check\u003dFALSE;\nthr        \u003d ifdef ($thr, 0.0001);      # $thr\u003d0.0001;\nfmtO       \u003d ifdef ($fmt, \"text\");      # $fmt\u003d\"text\";\n\n###### MAIN PART ######\nm \u003d nrow (X);\nn \u003d ncol (X);\n\n# initializing factor matrices\nU \u003d rand (rows \u003d m, cols \u003d r, min \u003d -0.5, max \u003d 0.5); # mxr\nV \u003d rand (rows \u003d n, cols \u003d r, min \u003d -0.5, max \u003d 0.5); # nxr\n\nW \u003d ppred (X, 0, \"!\u003d\");\n\n# Prepare to compute losses (lresende)\nlosses \u003d matrix(0, rows\u003dmax_iter*2, cols\u003d1)\n\n# check for regularization\nif( reg \u003d\u003d \"L2\" ) ..."
+      },
+      "dateCreated": "Nov 7, 2016 12:54:07 PM",
+      "dateStarted": "Nov 14, 2016 10:00:36 AM",
+      "dateFinished": "Nov 14, 2016 10:00:36 AM",
+      "status": "FINISHED",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "title": "Define MLContext",
+      "text": "import org.apache.sysml.api.mlcontext._\nimport org.apache.sysml.api.mlcontext.ScriptFactory._\n\n// Create a SystemML context\nval ml \u003d new MLContext(sc)",
+      "user": "admin",
+      "dateUpdated": "Nov 14, 2016 10:00:28 AM",
+      "config": {
+        "colWidth": 12.0,
+        "graph": {
+          "mode": "table",
+          "height": 300.0,
+          "optionOpen": false,
+          "keys": [],
+          "values": [],
+          "groups": [],
+          "scatter": {}
+        },
+        "enabled": true,
+        "editorMode": "ace/mode/scala",
+        "title": true
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "jobName": "paragraph_1478803558902_1156051379",
+      "id": "20161110-124558_824300704",
+      "result": {
+        "code": "SUCCESS",
+        "type": "TEXT",
+        "msg": "\nimport org.apache.sysml.api.mlcontext._\n\nimport org.apache.sysml.api.mlcontext.ScriptFactory._\n\nml: org.apache.sysml.api.mlcontext.MLContext \u003d org.apache.sysml.api.mlcontext.MLContext@8656b5f\n"
+      },
+      "dateCreated": "Nov 10, 2016 12:45:58 PM",
+      "dateStarted": "Nov 14, 2016 10:00:36 AM",
+      "dateFinished": "Nov 14, 2016 10:00:36 AM",
+      "status": "FINISHED",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "title": "Execute DML Script",
+      "text": "// Define input/output variables for DML script\nval nnz \u003d train.count  // non-zero entries in training user-item matrix\nval mm \u003d new MatrixMetadata(MatrixFormat.IJV, rows, cols, nnz)  // define input martrix characteristics\nval alsScript \u003d dml(script1).in(\"X\", train, mm)                 // input training data\n                            .in(\"lambda\", 0.1)                  // regularization param\n                            .in(\"rank\", 5)                      // rank of factorization\n                            .out(\"U\", \"V\", \"losses\")\n\n// Execute script\nval res \u003d ml.execute(alsScript)",
+      "user": "admin",
+      "dateUpdated": "Nov 14, 2016 10:00:28 AM",
+      "config": {
+        "colWidth": 12.0,
+        "graph": {
+          "mode": "table",
+          "height": 300.0,
+          "optionOpen": false,
+          "keys": [],
+          "values": [],
+          "groups": [],
+          "scatter": {}
+        },
+        "enabled": true,
+        "editorMode": "ace/mode/scala",
+        "title": true
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "jobName": "paragraph_1478559625725_-1524658848",
+      "id": "20161107-170025_1466925889",
+      "result": {
+        "code": "SUCCESS",
+        "type": "TEXT",
+        "msg": "\nnnz: Long \u003d 865981\n\nmm: org.apache.sysml.api.mlcontext.MatrixMetadata \u003d rows: 9999, columns: 59999, non-zeros: 865981, rows per block: None, columns per block: None\n\n\n\n\n\n\n\n\n\n\n\nalsScript: org.apache.sysml.api.mlcontext.Script \u003d \nInputs:\n  [1] (RDD as Matrix) X: MapPartitionsRDD[43] at randomSplit at \u003cconsole\u003e:45\n  [2] (Double) lambda: 0.1\n  [3] (Integer) rank: 5\n\nOutputs:\n  [1] U\n  [2] V\n  [3] losses\n\n\n\n\n\n\nres: org.apache.sysml.api.mlcontext.MLResults \u003d \n  [1] (Matrix) U: MatrixObject: scratch_space//_p35996_10.168.31.93//_t0/temp834_994, [9999 x 3, nnz\u003d29997, blocks (1000 x 1000)], binaryblock, dirty\n  [2] (Matrix) V: MatrixObject: scratch_space//_p35996_10.168.31.93//_t0/temp475_1025, [3 x 59999, nnz\u003d179997, blocks (1000 x 1000)], binaryblock, dirty\n  [3] (Matrix) losses: MatrixObject: scratch_space//_p35996_10.168.31.93//_t0/temp474_1024, [20 x 1, nnz\u003d20, blocks (1000 x 1000)], binaryblock, dirty\n\n"
+      },
+      "dateCreated": "Nov 7, 2016 5:00:25 AM",
+      "dateStarted": "Nov 14, 2016 10:00:36 AM",
+      "dateFinished": "Nov 14, 2016 10:01:49 AM",
+      "status": "FINISHED",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "title": "Model Outputs",
+      "text": "val U \u003d res.getMatrix(\"U\")\nval V \u003d res.getMatrix(\"V\")\n\nval losses \u003d res.getMatrix(\"losses\").toDF()\nz.show(losses)",
+      "user": "admin",
+      "dateUpdated": "Nov 14, 2016 10:00:28 AM",
+      "config": {
+        "colWidth": 12.0,
+        "graph": {
+          "mode": "lineChart",
+          "height": 300.0,
+          "optionOpen": false,
+          "keys": [
+            {
+              "name": "__INDEX",
+              "index": 0.0,
+              "aggr": "sum"
+            }
+          ],
+          "values": [
+            {
+              "name": "C1",
+              "index": 1.0,
+              "aggr": "sum"
+            }
+          ],
+          "groups": [],
+          "scatter": {
+            "xAxis": {
+              "name": "__INDEX",
+              "index": 0.0,
+              "aggr": "sum"
+            },
+            "yAxis": {
+              "name": "C1",
+              "index": 1.0,
+              "aggr": "sum"
+            }
+          }
+        },
+        "enabled": true,
+        "editorMode": "ace/mode/scala",
+        "title": true
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "jobName": "paragraph_1478632462681_1208549059",
+      "id": "20161108-131422_1800305190",
+      "result": {
+        "code": "SUCCESS",
+        "type": "TABLE",
+        "msg": "__INDEX\tC1\n1.0\t6081720.610319081\n2.0\t4637004.8230711045\n3.0\t2060229.1287590512\n4.0\t1385731.996605624\n5.0\t1035289.5380348443\n6.0\t900508.3396887323\n7.0\t784815.3662090958\n8.0\t726663.0216398205\n9.0\t661230.3733303841\n10.0\t627625.9739119717\n11.0\t587632.633772469\n12.0\t566736.0473384035\n13.0\t539162.91585186\n14.0\t524552.294282274\n15.0\t504722.98894569813\n16.0\t494551.7191922029\n17.0\t479365.95377814415\n18.0\t471591.42207464075\n19.0\t459527.18576880026\n20.0\t453803.67142241664\n"
+      },
+      "dateCreated": "Nov 8, 2016 1:14:22 AM",
+      "dateStarted": "Nov 14, 2016 10:00:37 AM",
+      "dateFinished": "Nov 14, 2016 10:01:49 AM",
+      "status": "FINISHED",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "title": "Mean Squared Error",
+      "text": "// Create kernel in SystemML\u0027s DSL using the R-like syntax for MSE\nval script2 \u003d\n\"\"\"\nn \u003d nrow(X);\nm \u003d ncol(X);\n\nUrows \u003d nrow(U);\nVcols \u003d ncol(V);\n\nif (Urows !\u003d n | Vcols !\u003d  m) {\n\tstop (\"Predictions cannot be provided. The shape of test user-item matrix is not consistant with the test matrix\");\n}\n\nXpred \u003d U %*% V * (X !\u003d 0)\nnnz \u003d sum(X !\u003d 0)\n\nMSE \u003d sum((Xpred - X)^2)/nnz\n\n\"\"\"",
+      "user": "admin",
+      "dateUpdated": "Nov 14, 2016 10:00:28 AM",
+      "config": {
+        "colWidth": 12.0,
+        "editorMode": "ace/mode/scala",
+        "editorHide": false,
+        "graph": {
+          "mode": "table",
+          "height": 300.0,
+          "optionOpen": false,
+          "keys": [],
+          "values": [],
+          "groups": [],
+          "scatter": {}
+        },
+        "enabled": true,
+        "title": true
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "jobName": "paragraph_1478544847406_290615843",
+      "id": "20150703-133047_853701097",
+      "result": {
+        "code": "SUCCESS",
+        "type": "TEXT",
+        "msg": "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nscript2: String \u003d \n\"\nn \u003d nrow(X);\nm \u003d ncol(X);\n\nUrows \u003d nrow(U);\nVcols \u003d ncol(V);\n\nif (Urows !\u003d n | Vcols !\u003d  m) {\n\tstop (\"Predictions cannot be provided. The shape of test user-item matrix is not consistant with the test matrix\");\n}\n\nXpred \u003d U %*% V * (X !\u003d 0)\nnnz \u003d sum(X !\u003d 0)\n\nMSE \u003d sum((Xpred - X)^2)/nnz\n\n\"\n"
+      },
+      "dateCreated": "Nov 7, 2016 12:54:07 PM",
+      "dateStarted": "Nov 14, 2016 10:01:49 AM",
+      "dateFinished": "Nov 14, 2016 10:01:49 AM",
+      "status": "FINISHED",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "text": "val mtest \u003d new MatrixMetadata(MatrixFormat.IJV, rows, cols, test.count)  // meta data for test metrix\nval mseScript \u003d dml(script2).in(\"X\", test, mtest)  // input test data\n                            .in(\"U\", U)            // matrix U from the model\n                            .in(\"V\", V)            // matrix V from the model\n                            .out(\"MSE\")\n// Execute script\nml.execute(mseScript)",
+      "user": "admin",
+      "dateUpdated": "Nov 14, 2016 10:00:28 AM",
+      "config": {
+        "colWidth": 12.0,
+        "graph": {
+          "mode": "table",
+          "height": 300.0,
+          "optionOpen": false,
+          "keys": [],
+          "values": [],
+          "groups": [],
+          "scatter": {}
+        },
+        "enabled": true,
+        "editorMode": "ace/mode/scala"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "jobName": "paragraph_1478913838834_1033191440",
+      "id": "20161111-192358_1771805687",
+      "result": {
+        "code": "SUCCESS",
+        "type": "TEXT",
+        "msg": "\nmtest: org.apache.sysml.api.mlcontext.MatrixMetadata \u003d rows: 9999, columns: 59999, non-zeros: 370870, rows per block: None, columns per block: None\n\n\n\n\n\n\n\n\n\nmseScript: org.apache.sysml.api.mlcontext.Script \u003d \nInputs:\n  [1] (RDD as Matrix) X: MapPartitionsRDD[44] at randomSplit at \u003cconsole\u003e:45\n  [2] (Matrix as Matrix) U: MatrixObject: scratch_space//_p35996_10.168.31.93//_t0/temp834_994, [9999 x 3, nnz\u003d29997, blocks ...\n  [3] (Matrix as Matrix) V: MatrixObject: scratch_space//_p35996_10.168.31.93//_t0/temp475_1025, [3 x 59999, nnz\u003d179997, bloc...\n\nOutputs:\n  [1] MSE\n\n\n\n\nres30: org.apache.sysml.api.mlcontext.MLResults \u003d \n  [1] (Double) MSE: 1.1520023261377847\n\n"
+      },
+      "dateCreated": "Nov 11, 2016 7:23:58 AM",
+      "dateStarted": "Nov 14, 2016 10:01:49 AM",
+      "dateFinished": "Nov 14, 2016 10:02:56 AM",
+      "status": "FINISHED",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "text": "%md\n## Congratulations, it\u0027s done.\n##### You can now start experimenting with Apache SysteML. Good luck!",
+      "user": "admin",
+      "dateUpdated": "Nov 14, 2016 10:00:28 AM",
+      "config": {
+        "colWidth": 12.0,
+        "graph": {
+          "mode": "table",
+          "height": 300.0,
+          "optionOpen": false,
+          "keys": [],
+          "values": [],
+          "groups": [],
+          "scatter": {}
+        },
+        "enabled": true,
+        "editorMode": "ace/mode/markdown",
+        "editorHide": true
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "jobName": "paragraph_1478804762595_-1770649782",
+      "id": "20161110-130602_798926896",
+      "result": {
+        "code": "SUCCESS",
+        "type": "HTML",
+        "msg": "\u003ch2\u003eCongratulations, it\u0027s done.\u003c/h2\u003e\n\u003ch5\u003eYou can now start experimenting with Apache SysteML. Good luck!\u003c/h5\u003e\n"
+      },
+      "dateCreated": "Nov 10, 2016 1:06:02 AM",
+      "dateStarted": "Nov 14, 2016 10:00:28 AM",
+      "dateFinished": "Nov 14, 2016 10:00:28 AM",
+      "status": "FINISHED",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "text": "",
+      "user": "admin",
+      "dateUpdated": "Nov 14, 2016 10:00:28 AM",
+      "config": {
+        "colWidth": 12.0,
+        "graph": {
+          "mode": "table",
+          "height": 300.0,
+          "optionOpen": false,
+          "keys": [],
+          "values": [],
+          "groups": [],
+          "scatter": {}
+        },
+        "enabled": true,
+        "editorMode": "ace/mode/scala"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "jobName": "paragraph_1478818168075_1325841217",
+      "id": "20161110-164928_183555305",
+      "result": {
+        "code": "SUCCESS",
+        "type": "TEXT",
+        "msg": ""
+      },
+      "dateCreated": "Nov 10, 2016 4:49:28 AM",
+      "dateStarted": "Nov 14, 2016 10:01:50 AM",
+      "dateFinished": "Nov 14, 2016 10:02:56 AM",
+      "status": "FINISHED",
+      "progressUpdateIntervalMs": 500
+    }
+  ],
+  "name": "Apache Big Data - SystemML",
+  "id": "2C3F2NPKF",
+  "angularObjects": {
+    "2C11SUQ14:shared_process": [],
+    "2C1KYAKKN:shared_process": [],
+    "2C3MPB43E:shared_process": [],
+    "2C1YWPCCW:shared_process": [],
+    "2C1KM5XU1:shared_process": [],
+    "2C27N94DR:shared_process": [],
+    "2BZB9PKF4:shared_process": [],
+    "2C37QFJW5:shared_process": [],
+    "2BZ13CKA8:shared_process": [],
+    "2C3HRX91U:shared_process": [],
+    "2BZS2TYYG:shared_process": [],
+    "2BZQW4K74:shared_process": [],
+    "2C1B56AG2:shared_process": [],
+    "2C1C3VYF4:shared_process": [],
+    "2C1G7875V:shared_process": [],
+    "2BZ9YZ3PY:shared_process": [],
+    "2C19DMCNY:shared_process": [],
+    "2C12TXF3U:shared_process": []
+  },
+  "config": {},
+  "info": {}
+}
